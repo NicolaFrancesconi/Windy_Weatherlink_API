@@ -1,9 +1,9 @@
 ###################################
 # START API KEYS AND SECRETS
 ###################################
-WEATHERLINK_API_KEY = "ovt4dcaqkijquwt5fzfomoyhwq0ltwze" 
-WEATHERLINK_API_SECRET = "tonrh7bvimqxcjl7tma2urpv41dbk5tx"
-WINDY_API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjaSI6MTQ1NDg3MDcsImlhdCI6MTc0ODI1MzQ2MX0.AJphOGKvDDHQ_HFYQXJu9N2cm23QOIp86xN321rEpxA"
+WEATHERLINK_API_KEY = "YOUR_WL_API_KEY" 
+WEATHERLINK_API_SECRET = "YOUR_WL_API_SECRET"
+WINDY_API_KEY = "YOUR_WINDY_API_KEY"
 ###################################
 # END API KEYS AND SECRETS
 ###################################
