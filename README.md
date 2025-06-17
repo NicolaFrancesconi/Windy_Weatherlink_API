@@ -23,18 +23,6 @@ requests
 schedule
 ```
 
----
-
-## 📁 File Structure
-
-```
-your_project/
-├── WeatherlinkWindy.py         # Your main script
-├── params.py                   # Contains API keys and config
-└── conversion_function.py      # Contains unit conversion utilities
-```
-
----
 
 ## ⚙️ Configuration (`params.py`)
 
