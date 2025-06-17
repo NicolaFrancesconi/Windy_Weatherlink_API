@@ -1,7 +1,9 @@
 import requests
-import json
 import params
 import conversion_function as convf
+from datetime import datetime, timedelta
+import schedule
+import time
 
 class WeatherlinkWindy:
     """
@@ -21,18 +23,7 @@ class WeatherlinkWindy:
         self.share_option = params.SHARE_OPTION
         self.tempheight = params.TEMPHEIGHT
         self.windheight = params.WINDHEIGHT
-        
-        self.field_map = {
-            "hum" : ("rh", convf.identity),
-            "dew_point" : ("dew_point", convf.identity),
-            "uv_index" : ("uv", convf.identity),
-            "wind_speed_last" : ("wind", convf.identity),
-            "wind_dir_last" : ("winddir", convf.identity),
-            "wind_speed_hi_last_2_min" : ("windgust", convf.identity),
-            "rainfall_last_60_min_mm" : ("precip", convf.identity),
-            "bar_sea_level" : ("mbar", convf.inchesOfMercury_to_mbar),
-            "temp" : ("temp", convf.fahrenheit_to_celsius),
-        }
+        self.field_mapping = params.FIELD_MAPPING
         
         self.station_dict = {
                 "station": self.windy_station_id,
@@ -44,6 +35,12 @@ class WeatherlinkWindy:
                 "windheight": self.windheight,
                 "shareOption": self.share_option
             }
+        
+    def fetch_and_post_weather_data(self, Verbose=True):
+        """Fetches weather data from Weatherlink and posts it to Windy."""
+        weather_data = self.get_weatherlink_data()
+        json_data = self.get_json_to_post(weather_data, Verbose)
+        self.post_data_on_windy(json_data)
         
     def get_weatherlink_station_id(self):
         """
@@ -109,7 +106,7 @@ class WeatherlinkWindy:
                 station_success = all(entry.get("success", False) for entry in result_data.get("stations", []))
                 obs_success = all(entry.get("success", False) for entry in result_data.get("observations", []))
                 if not (station_success and obs_success):
-                    print(f"[ERROR] Station or observation update failed for station {station_id}")
+                    #print(f"[ERROR] Station or observation update failed for station {station_id}")
                     # PRINT THE ERROR DETAILS
                     for obs in result_data.get("observations", []):
                         if not obs.get("success") and "error" in obs:
@@ -126,7 +123,7 @@ class WeatherlinkWindy:
             print("[EXCEPTION] Failed to decode JSON response.")
             return False
         
-    def get_json_to_post(self, weather_data):
+    def get_json_to_post(self, weather_data, verbose=True):
         """
         Prepares the JSON file with the required structure.
         Returns the JSON string.
@@ -144,15 +141,26 @@ class WeatherlinkWindy:
                 tz_offset = 0
                 observation_dict["time"] = convf.timestamp_to_iso(timestamp, tz_offset)
             
-            for weatherlink_key, (windy_key, convert ) in api_interface.field_map.items():
+            for weatherlink_key, (windy_key, convert ) in self.field_mapping.items():
                 value = sensor_data.get(weatherlink_key)
                 if value is not None:
                     observation_dict[windy_key] = convert(value)
         data = {
-            "stations": [api_interface.station_dict],
+            "stations": [self.station_dict],
             "observations": [observation_dict]
-        }     
+        }
         
+        
+        if verbose:
+            self.print_observation_data(observation_dict)
+        
+        
+        return data
+        
+    def print_observation_data(self, observation_dict):
+        """
+        Prints the weather data in a readable format.
+        """
         print("Weather Data:")
         print(f"Temperature: {observation_dict['temp']} °C")
         print(f"Relative Humidity: {observation_dict['rh']} %")
@@ -164,17 +172,50 @@ class WeatherlinkWindy:
         print(f"Precipitation (last 60 min): {observation_dict['precip']} mm")
         print(f"Pressure (mbar): {observation_dict['mbar']} mbar")
         print(f"Time: {observation_dict['time']}")   
-        
-        return data
-        
-        
-        
-# Example usage
-api_interface = WeatherlinkWindy()
-weather_data = api_interface.get_weatherlink_data()
-json_data = api_interface.get_json_to_post(weather_data)
-api_interface.post_data_on_windy(json_data)
+
+    def seconds_to_next_interval(self,interval_minutes):
+        """
+        Calculates the number of seconds until the next time interval.
+
+        Parameters:
+            interval_minutes (int): The interval in minutes.
+
+        Returns:
+            float: Seconds until the next interval aligned with the hour.
+        """
+        now = datetime.now()
+        total_minutes = now.hour * 60 + now.minute
+        next_interval = ((total_minutes // interval_minutes) + 1) * interval_minutes
+
+        next_hour = (next_interval // 60) % 24  # Wrap around if past 24h
+        next_minute = next_interval % 60
+        days_to_add = (total_minutes + interval_minutes) // (24 * 60)  # Handle day rollover
+        next_time = now.replace(hour=next_hour, minute=next_minute, second=0, microsecond=0) + timedelta(days=days_to_add)
+        return (next_time - now).total_seconds()
         
 
-        
 
+
+if __name__ == "__main__":
+    print("Weather upload service started. Press Ctrl+C to stop.")
+    first_post = True  # Flag to indicate the first run
+    api_interface = WeatherlinkWindy()
+    while True:
+        try:
+            if first_post:
+                delay_seconds = api_interface.seconds_to_next_interval(params.POST_ON_WINDY_EVERY_N_MINUTES)  # Calculate seconds to the next 15-minute interval
+                print(f"Waiting for the next interval. Sleeping for {int(delay_seconds)} seconds.")
+                time.sleep(delay_seconds)
+                api_interface.fetch_and_post_weather_data()  # Initial fetch and post
+                schedule.every(params.POST_ON_WINDY_EVERY_N_MINUTES).minutes.do(api_interface.fetch_and_post_weather_data)
+                first_post = False                    
+            else:
+                schedule.run_pending()
+                time.sleep(1)
+            
+        except KeyboardInterrupt:
+            print("Stopping the Weather upload service.")
+            break
+        
+        except Exception as e:
+            print(f"An error occurred: {e}")
